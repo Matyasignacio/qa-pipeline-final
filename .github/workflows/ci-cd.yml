@@ -1,0 +1,75 @@
+name: CI/CD DevSecOps Final
+on:
+  push:
+    branches: ["develop"]
+  pull_request:
+    branches: ["main"]
+jobs:
+  qa-security-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Checkout del Código
+        uses: actions/checkout@v3
+      - name: 2. Instalar Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: 3. Instalar dependencias
+        run: npm install
+      - name: 4. Ejecutar Pruebas Unitarias y Cobertura (Requisito E2)
+        run: npm test -- --coverage
+      - name: 5. SonarCloud Scan (Análisis Estático)
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: 6. Esperar y Verificar SonarCloud Quality Gate (BLOQUEO CRÍTICO)
+        uses: SonarSource/sonarcloud-check-quality-gate-action@v1
+        with:
+          check_status: true
+      - name: 7. Snyk Security TEST (Análisis de Dependencias - BLOQUEO)
+        uses: snyk/actions/node@master
+        continue-on-error: false 
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test 
+          args: --severity-threshold=high 
+  build-and-push:
+    needs: [qa-security-check] 
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Checkout del Código
+        uses: actions/checkout@v3
+      - name: 2. Login en Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: 3. Build y Push de la Imagen Docker
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/evaluacion-qa-final:latest
+
+      - name: 4. Docker Scout (Escaneo de Imagen Construida)
+        uses: docker/scout-action@v1
+        with:
+          command: quickview
+          image: ${{ secrets.DOCKER_USERNAME }}/evaluacion-qa-final:latest
+  deploy:
+    name: Despliegue Continuo a Producción (Simulación)
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    if: github.ref == 'refs/heads/main' 
+    steps:
+      - name: 1. Ejecución de Pruebas de Aceptación (Simulación)
+        run: |
+          echo "Iniciando Pruebas de Aceptación/E2E..."
+          sleep 5
+          echo "Pruebas de Aceptación exitosas (Simulado)."
+      - name: 2. Despliegue a Entorno de Producción (Simulación)
+        run: |
+          echo "Iniciando Despliegue en PROD..."
+          echo "Despliegue de la imagen Docker final completado."
